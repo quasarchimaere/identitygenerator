@@ -8,59 +8,40 @@ import quasarchimaere.identitygenerator.core.enums.EmailNameType;
 import quasarchimaere.identitygenerator.core.model.Identity;
 import org.apache.commons.lang3.ArrayUtils;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Scanner;
 
 @Service
 public class IdentityGeneratorServiceImpl implements IdentityGeneratorService, InitializingBean {
     private String[] firstNames;
     private String[] lastNames;
-    private String[] emailProvider = {"gmail.com", "gmx.com", "live.com", "gmx.net", "gmx.at", "yahoo.com", "freemail.com", "googlemail.com", "hotmail.com", "freemail.at", "dekutree.com", "challenge-club.net"};
+    private String[] emailProvider;
 
     private MessageDigest digest;
 
-    @Value("classpath:firstnames.txt")
+    @Value("classpath:firstnames.csv")
     private Resource firstNameResource;
 
-    @Value("classpath:lastnames.txt")
+    @Value("classpath:lastnames.csv")
     private Resource lastNameResource;
 
-    @Override
-    public void afterPropertiesSet() throws Exception {
-        Scanner sc = new Scanner(firstNameResource.getFile());
-        List<String> lines = new ArrayList<String>();
-        while (sc.hasNextLine()) {
-            lines.add(sc.nextLine());
-        }
+    @Value("classpath:emailprovider.csv")
+    private Resource emailProviderResource;
 
-        this.firstNames = lines.toArray(new String[0]);
-
-        sc = new Scanner(lastNameResource.getFile());
-        lines = new ArrayList<String>();
-        while (sc.hasNextLine()) {
-            lines.add(sc.nextLine());
-        }
-
-        this.lastNames = lines.toArray(new String[0]);
-    }
-
-    public IdentityGeneratorServiceImpl() throws NoSuchAlgorithmException, FileNotFoundException {
+    public IdentityGeneratorServiceImpl() throws NoSuchAlgorithmException {
         this("SHA-256");
     }
 
-    public IdentityGeneratorServiceImpl(String hashAlgorithm) throws NoSuchAlgorithmException, FileNotFoundException{
+    public IdentityGeneratorServiceImpl(String hashAlgorithm) throws NoSuchAlgorithmException {
         this(MessageDigest.getInstance(hashAlgorithm));
     }
 
-    public IdentityGeneratorServiceImpl(MessageDigest digest) throws NoSuchAlgorithmException, FileNotFoundException{
+    public IdentityGeneratorServiceImpl(MessageDigest digest) throws NoSuchAlgorithmException {
         this.digest = digest;
     }
 
@@ -96,10 +77,24 @@ public class IdentityGeneratorServiceImpl implements IdentityGeneratorService, I
     }
 
     private String generateLastName(byte[] original) throws UnsupportedEncodingException{
+        String lastName;
+
         digest.update(generateByteHash(original, "ln"));
         long index = getLongValueFromHash(digest.digest()) % lastNames.length;
 
-        return lastNames[(int) index];
+        lastName=lastNames[(int) index];
+
+        digest.update(generateByteHash(original, "lnhyphen"));
+        if(getLongValueFromHash(digest.digest()) % 7 == 1L) {
+            digest.update(generateByteHash(original, "ln2p"));
+            long index2 = getLongValueFromHash(digest.digest()) % lastNames.length;
+
+            if(index!=index2){
+                lastName=lastName+"-"+lastNames[(int) index2];
+            }
+        }
+
+        return lastName;
     }
 
     private String generateEmail(byte[] original) throws UnsupportedEncodingException{
@@ -134,8 +129,11 @@ public class IdentityGeneratorServiceImpl implements IdentityGeneratorService, I
         int lastnameIndex = (int) (getLongValueFromHash(digest.digest()) % EmailNameType.values().length);
         switch (EmailNameType.values()[lastnameIndex]) {
             case FIRSTLETTER:
-                lastNamePart = generateLastName(original).substring(0,1);
-                break;
+                //use the full lastname for the email address if the firstname was anything else than the fullname
+                if(EmailNameType.values()[firstnameIndex] != EmailNameType.FULLNAME) {
+                    lastNamePart = generateLastName(original).substring(0, 1);
+                    break;
+                }
             case NONAME:
             case FULLNAME:
                 lastNamePart = generateLastName(original);
@@ -158,8 +156,7 @@ public class IdentityGeneratorServiceImpl implements IdentityGeneratorService, I
         int providerIndex = (int) (getLongValueFromHash(digest.digest()) % emailProvider.length);
         email.append(emailProvider[providerIndex]);
 
-        return Normalizer.normalize(email.toString().toLowerCase(), Normalizer.Form.NFD)
-                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        return Normalizer.normalize(email.toString().toLowerCase(), Normalizer.Form.NFD).replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
     }
 
     private long getLongValueFromHash(byte[] hash){
@@ -169,5 +166,17 @@ public class IdentityGeneratorServiceImpl implements IdentityGeneratorService, I
             value += (long) hash[i] & 0xffL << (8 * i);
         }
         return (value < 0)? value * -1 : value;
+    }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        Scanner sc = new Scanner(firstNameResource.getFile());
+        this.firstNames = sc.nextLine().split(";");
+
+        sc = new Scanner(lastNameResource.getFile());
+        this.lastNames = sc.nextLine().split(";");
+
+        sc = new Scanner(emailProviderResource.getFile());
+        this.emailProvider = sc.nextLine().split(";");
     }
 }
