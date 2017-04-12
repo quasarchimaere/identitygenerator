@@ -8,3 +8,6 @@
 
 #generated files (e.g. styles)
 **/generated/
+identitygenerator-core/target/
+identitygenerator-webapp/src/test/
+identitygenerator-webapp/target/
