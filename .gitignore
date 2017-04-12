@@ -1,0 +1,10 @@
+*.class
+
+# IntelliJ Files
+*.iml
+*.ipr
+*.iws
+**/.idea
+
+#generated files (e.g. styles)
+**/generated/
